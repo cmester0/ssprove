@@ -180,6 +180,7 @@ Section Interpreter.
           | Some (seed'' , y) => Some (seed'', inr y)
           | _ => None
           end
+    | chFun A B => None
     end.
   Next Obligation.
     eapply Ordinal.

@@ -52,7 +52,8 @@ Inductive choice_type :=
 | chFin (n : positive)
 | chWord (nbits : wsize)
 | chList (A : choice_type)
-| chSum (A B : choice_type).
+| chSum (A B : choice_type)
+| chFun (A B : choice_type).
 
 Derive NoConfusion NoConfusionHom for choice_type.
 
@@ -72,6 +73,7 @@ Fixpoint chElement_ordType (U : choice_type) : ordType :=
   | chWord nbits => word_ordType nbits
   | chList U => seq_ordType (chElement_ordType U)
   | chSum U1 U2 => sum_ordType (chElement_ordType U1) (chElement_ordType U2)
+  | chFun U1 U2 => prod_ordType (chElement_ordType U1) (chElement_ordType U2)
   end.
 
 Fixpoint chElement (U : choice_type) : choiceType :=
@@ -87,8 +89,9 @@ Fixpoint chElement (U : choice_type) : choiceType :=
   | chWord nbits => word_choiceType nbits
   | chList U => seq_choiceType (chElement U)
   | chSum U1 U2 => sum_choiceType (chElement U1) (chElement U2)
+  | chFun U1 U2 => boolp.choice_of_Type (chElement U1 -> chElement U2)
   end.
-
+  
 Coercion chElement : choice_type >-> choiceType.
 
 (* Canonical element in a type of the choice_type *)
@@ -105,6 +108,7 @@ Coercion chElement : choice_type >-> choiceType.
   | chWord nbits => word0
   | chList A => [::]
   | chSum A B => inl (chCanonical A) (* TODO: better default *)
+  | chFun A B => fun _ => chCanonical B
   end.
 Next Obligation.
   eapply fmap_of_fmap. apply emptym.
@@ -140,6 +144,7 @@ Section choice_typeTypes.
     | chWord nbits, chWord nbits' => nbits == nbits'
     | chList a, chList b => choice_type_test a b
     | chSum a b, chSum a' b' =>  choice_type_test a a' && choice_type_test b b'
+    | chFun a b, chFun a' b' =>  choice_type_test a a' && choice_type_test b b'
     | _ , _ => false
     end.
 
@@ -149,9 +154,9 @@ Section choice_typeTypes.
   Lemma choice_type_eqP : Equality.axiom choice_type_eq.
   Proof.
     move=> x y.
-    induction x as [ | | | | x1 ih1 x2 ih2 | x1 ih1 x2 ih2 | x1 ih1 | x1 | x1 | x1 ih1 | x1 ih1 x2 ih2 ]
+    induction x as [ | | | | x1 ih1 x2 ih2 | x1 ih1 x2 ih2 | x1 ih1 | x1 | x1 | x1 ih1 | x1 ih1 x2 ih2 | x1 ih1 x2 ih2 ]
     in y |- *.
-    all: destruct y as [ | | | | y1 y2 | y1 y2 | y1 | y1 | y1 | y1 | y1 y2 ].
+    all: destruct y as [ | | | | y1 y2 | y1 y2 | y1 | y1 | y1 | y1 | y1 y2 | y1 y2 ].
     all: simpl.
     all: try solve [ right ; discriminate ].
     all: try solve [ left ; reflexivity ].
@@ -188,6 +193,12 @@ Section choice_typeTypes.
       + left. reflexivity.
       + right. congruence.
     (* chSum *)
+    - destruct (ih1 y1), (ih2 y2).
+      all: simpl.
+      all: subst.
+      all: try solve [right ; congruence].
+      left. reflexivity.
+    (* chFun *)
     - destruct (ih1 y1), (ih2 y2).
       all: simpl.
       all: subst.
@@ -291,6 +302,21 @@ Section choice_typeTypes.
   | chSum u1 u2, chSum w1 w2 =>
     (choice_type_lt u1 w1) ||
     (choice_type_test u1 w1 && choice_type_lt u2 w2)
+  | chSum _ _, _ => true
+  | chFun _ _, chUnit => false
+  | chFun _ _, chBool => false
+  | chFun _ _, chNat => false
+  | chFun _ _, chInt => false
+  | chFun _ _, chProd _ _ => false
+  | chFun _ _, chMap _ _ => false
+  | chFun _ _, chOption _ => false
+  | chFun _ _, chFin _ => false
+  | chFun _ _, chWord _ => false
+  | chFun _ _, chList _ => false
+  | chFun _ _, chSum _ _ => false
+  | chFun u1 u2, chFun w1 w2 =>
+    (choice_type_lt u1 w1) ||
+    (choice_type_test u1 w1 && choice_type_lt u2 w2)
   end.
 
   Definition choice_type_leq (t1 t2 : choice_type) :=
@@ -299,7 +325,7 @@ Section choice_typeTypes.
   Lemma choice_type_lt_transitive : transitive (T:=choice_type) choice_type_lt.
   Proof.
     intros v u w h1 h2.
-    induction u as [ | | | | u1 ih1 u2 ih2 | u1 ih1 u2 ih2 | u ih | u | u | u ih | u1 ih1 u2 ih2 ]
+    induction u as [ | | | | u1 ih1 u2 ih2 | u1 ih1 u2 ih2 | u ih | u | u | u ih | u1 ih1 u2 ih2 | u1 ih1 u2 ih2 ]
     in v, w, h1, h2 |- *.
     (* chUnit *)
     - destruct w. all: try auto.
@@ -381,13 +407,29 @@ Section choice_typeTypes.
         apply/andP. subst. split.
         * apply/eqP. reflexivity.
         * eapply ih2. all: eauto.
+  (* chFun *)
+    - destruct v. all: try discriminate.
+      all: destruct w. all: try discriminate. all: try reflexivity.
+      simpl in *.
+      move: h1 => /orP h1.
+      move: h2 => /orP h2.
+      apply/orP.
+      destruct h1 as [h1|h1], h2 as [h2|h2].
+      + left. eapply ih1. all: eauto.
+      + left. move: h2 => /andP [/eqP e h2]. subst. auto.
+      + left. move: h1 => /andP [/eqP e h1]. subst. auto.
+      + right. move: h1 => /andP [/eqP e1 h1].
+        move: h2 => /andP [/eqP e2 h2].
+        apply/andP. subst. split.
+        * apply/eqP. reflexivity.
+        * eapply ih2. all: eauto.
   Qed.
 
   Lemma choice_type_lt_areflexive :
     ∀ x, ~~ choice_type_lt x x.
   Proof.
     intros x.
-    induction x as [ | | | | x1 ih1 x2 ih2 | x1 ih1 x2 ih2 | x ih | x | x | x ih | x1 ih1 x2 ih2] in |- *.
+    induction x as [ | | | | x1 ih1 x2 ih2 | x1 ih1 x2 ih2 | x ih | x | x | x ih | x1 ih1 x2 ih2 | x1 ih1 x2 ih2] in |- *.
     all: intuition; simpl.
     - simpl.
       apply/norP. split.
@@ -407,6 +449,11 @@ Section choice_typeTypes.
       + apply ih1.
       + apply/nandP.
         right. apply ih2.
+    - simpl.
+      apply/norP. split.
+      + apply ih1.
+      + apply/nandP.
+        right. apply ih2.
   Qed.
 
   Lemma choice_type_lt_total_holds :
@@ -414,7 +461,7 @@ Section choice_typeTypes.
       ~~ (choice_type_test x y) ==> (choice_type_lt x y || choice_type_lt y x).
   Proof.
     intros x y.
-    induction x as [ | | | | x1 ih1 x2 ih2| x1 ih1 x2 ih2| x ih| x | x | x ih | x1 ih1 x2 ih2]
+    induction x as [ | | | | x1 ih1 x2 ih2| x1 ih1 x2 ih2| x ih| x | x | x ih | x1 ih1 x2 ih2 | x1 ih1 x2 ih2]
     in y |- *.
     all: try solve [ destruct y ; intuition ; reflexivity ].
     (* chProd *)
@@ -506,6 +553,42 @@ Section choice_typeTypes.
       + left. by apply /eqP.
       + right. unfold cmp_lt. rewrite cmp_sym. by move: E => ->.
     (* chSum *)
+    - destruct y. all: try (intuition; reflexivity).
+      cbn.
+      specialize (ih1 y1). specialize (ih2 y2).
+      apply/implyP.
+      move /nandP => H.
+      apply/orP.
+      destruct (choice_type_test x1 y1) eqn:Heq.
+      + destruct H. 1: discriminate.
+        move: ih2. move /implyP => ih2.
+        specialize (ih2 H).
+        move: ih2. move /orP => ih2.
+        destruct ih2.
+        * left. apply/orP. right. apply/andP. split.
+          all: intuition auto.
+        * right. apply/orP. right. apply/andP. intuition.
+          move: Heq. move /eqP => Heq. rewrite Heq. apply/eqP. reflexivity.
+      + destruct H.
+        * move: ih1. move /implyP => ih1.
+          specialize (ih1 H).
+          move: ih1. move /orP => ih1.
+          destruct ih1.
+          -- left. apply/orP. left. assumption.
+          -- right. apply/orP. left. assumption.
+        * move: ih2. move /implyP => ih2.
+          specialize (ih2 H).
+          move: ih2. move /orP => ih2.
+          destruct ih2.
+          --- simpl in ih1. move: ih1. move /orP => ih1.
+              destruct ih1.
+              +++ left. apply/orP. left. assumption.
+              +++ right. apply/orP. left. assumption.
+          --- simpl in ih1. move: ih1. move /orP => ih1.
+              destruct ih1.
+              +++ left. apply/orP. left. assumption.
+              +++ right. apply/orP. left. assumption.
+  (* chFun *)
     - destruct y. all: try (intuition; reflexivity).
       cbn.
       specialize (ih1 y1). specialize (ih2 y2).
@@ -648,6 +731,7 @@ Section choice_typeTypes.
   | chWord n => GenTree.Node 5 [:: GenTree.Leaf (wsize_log2 n)]
   | chList u => GenTree.Node 6 [:: encode u]
   | chSum l r => GenTree.Node 7 [:: encode l ; encode r]
+  | chFun l r => GenTree.Node 8 [:: encode l ; encode r]
   end.
 
   Fixpoint decode (t : GenTree.tree nat) : option choice_type :=
@@ -683,6 +767,11 @@ Section choice_typeTypes.
       | Some l, Some r => Some (chSum l r)
       | _, _ => None
       end
+    | GenTree.Node 8 [:: l ; r] =>
+      match decode l, decode r with
+      | Some l, Some r => Some (chFun l r)
+      | _, _ => None
+      end
     | _ => None
     end.
 
@@ -701,6 +790,7 @@ Section choice_typeTypes.
     - repeat f_equal. unfold wsizes.
       destruct nbits; reflexivity.
     - rewrite IHt. reflexivity.
+    - rewrite IHt1. rewrite IHt2. reflexivity.
     - rewrite IHt1. rewrite IHt2. reflexivity.
   Qed.
 

@@ -3854,7 +3854,7 @@ Admitted.
 
 End Translation.
 
-From Jasmin Require Import x86_instr_decl x86_extra x86_gen x86_linear_sem.
+From Jasmin Require Import x86_instr_decl x86_extra.
 Import arch_decl.
 
 Lemma id_tin_instr_desc :
